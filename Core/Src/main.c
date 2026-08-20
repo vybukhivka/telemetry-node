@@ -20,7 +20,10 @@
 #include "main.h"
 #include "gpio.h"
 #include "i2c.h"
+#include "stm32l4xx_hal_def.h"
+#include "stm32l4xx_hal_i2c.h"
 #include "usart.h"
+#include <stdint.h>
 #include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
@@ -30,6 +33,23 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct {
+  uint16_t dig_T1;
+  int16_t dig_T2;
+  int16_t dig_T3;
+
+  uint16_t dig_P1;
+  int16_t dig_P2;
+  int16_t dig_P3;
+  int16_t dig_P4;
+  int16_t dig_P5;
+  int16_t dig_P6;
+  int16_t dig_P7;
+  int16_t dig_P8;
+  int16_t dig_P9;
+} BMP280_CalibData;
+
+BMP280_CalibData calib;
 
 /* USER CODE END PTD */
 
@@ -46,7 +66,43 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+int32_t t_fine;
 
+int32_t bmp280_compensate_T_int32(int32_t adc_T, BMP280_CalibData *calib) {
+  int32_t var1, var2, T;
+  var1 = ((((adc_T >> 3) - ((int32_t)calib->dig_T1 << 1))) *
+          ((int32_t)calib->dig_T2)) >>
+         11;
+  var2 = (((((adc_T >> 4) - ((int32_t)calib->dig_T1)) *
+            ((adc_T >> 4) - ((int32_t)calib->dig_T1))) >>
+           12) *
+          ((int32_t)calib->dig_T3)) >>
+         14;
+  t_fine = var1 + var2;
+  T = (t_fine * 5 + 128) >> 8;
+  return T;
+}
+
+uint32_t bmp280_compensate_P_int64(int32_t adc_P, BMP280_CalibData *calib) {
+  int64_t var1, var2, p;
+  var1 = ((int64_t)t_fine) - 128000;
+  var2 = var1 * var1 * (int64_t)calib->dig_P6;
+  var2 = var2 + ((var1 * (int64_t)calib->dig_P5) << 17);
+  var2 = var2 + (((int64_t)calib->dig_P4) << 35);
+  var1 = ((var1 * var1 * (int64_t)calib->dig_P3) >> 8) +
+         ((var1 * (int64_t)calib->dig_P2) << 12);
+  var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)calib->dig_P1) >> 33;
+
+  if (var1 == 0) {
+    return 0;
+  }
+  p = 1048576 - adc_P;
+  p = (((p << 31) - var2) * 3125) / var1;
+  var1 = (((int64_t)calib->dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+  var2 = (((int64_t)calib->dig_P8) * p) >> 19;
+  p = ((p + var1 + var2) >> 8) + (((int64_t)calib->dig_P7) << 4);
+  return (uint32_t)p;
+}
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -95,33 +151,88 @@ int main(void) {
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  BMP280_CalibData calib;
+  uint8_t calib_buf[24];
   uint8_t chip_id = 0;
 
+  // Chip ID verification
   HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
       &hi2c1, (0x77 << 1), 0xD0, I2C_MEMADD_SIZE_8BIT, &chip_id, 1, 100);
 
   if (status == HAL_OK && chip_id == 0x58) {
-    printf("status: %d, chipid: 0x%02X\r\n", status, chip_id);
-  } else {
-    printf("chipid check failed... status: %d, chipid: 0x%02X\r\n", status,
-           chip_id);
+    if (HAL_I2C_Mem_Read(&hi2c1, (0x77 << 1), 0x88, I2C_MEMADD_SIZE_8BIT,
+                         calib_buf, 24, 100) == HAL_OK) {
+      calib.dig_T1 = (uint16_t)(calib_buf[1] << 8 | calib_buf[0]);
+      calib.dig_T2 = (int16_t)(calib_buf[3] << 8 | calib_buf[2]);
+      calib.dig_T3 = (int16_t)(calib_buf[5] << 8 | calib_buf[4]);
 
-    printf("Scanning I2C bus...\r\n");
-    for (uint16_t i = 0; i < 128; i++) {
-      if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 1, 10) == HAL_OK) {
-        printf("Found device at address: 0x%02X (HAL addr: 0x%02X)\r\n", i,
-               (i << 1));
-      }
+      calib.dig_P1 = (uint16_t)(calib_buf[7] << 8 | calib_buf[6]);
+      calib.dig_P2 = (int16_t)(calib_buf[9] << 8 | calib_buf[8]);
+      calib.dig_P3 = (int16_t)(calib_buf[11] << 8 | calib_buf[10]);
+      calib.dig_P4 = (int16_t)(calib_buf[13] << 8 | calib_buf[12]);
+      calib.dig_P5 = (int16_t)(calib_buf[15] << 8 | calib_buf[14]);
+      calib.dig_P6 = (int16_t)(calib_buf[17] << 8 | calib_buf[16]);
+      calib.dig_P7 = (int16_t)(calib_buf[19] << 8 | calib_buf[18]);
+      calib.dig_P8 = (int16_t)(calib_buf[21] << 8 | calib_buf[20]);
+      calib.dig_P9 = (int16_t)(calib_buf[23] << 8 | calib_buf[22]);
+
+      printf("Calibration loaded! T1=%u, P1=%u\r\n", calib.dig_T1,
+             calib.dig_P1);
     }
+
+    uint8_t osrs_t = 0x01 << 5;
+    uint8_t osrs_p = 0x03 << 2;
+    uint8_t mode = 0x03;
+
+    uint8_t ctrl_meas_reg = osrs_t | osrs_p | mode;
+
+    uint8_t t_sb = 0x04 << 5;
+    uint8_t filter = 0x02 << 2;
+
+    uint8_t config_reg = t_sb | filter;
+
+    HAL_I2C_Mem_Write(&hi2c1, (0x77 << 1), 0xF5, I2C_MEMADD_SIZE_8BIT,
+                      &config_reg, 1, 100);
+    HAL_I2C_Mem_Write(&hi2c1, (0x77 << 1), 0xF4, I2C_MEMADD_SIZE_8BIT,
+                      &ctrl_meas_reg, 1, 100);
+    printf("BMP280 Configured and running!\r\n");
   }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
+    uint8_t raw_data[6];
+    if (HAL_I2C_Mem_Read(&hi2c1, (0x77 << 1), 0xF7, I2C_MEMADD_SIZE_8BIT,
+                         raw_data, 6, 100) == HAL_OK) {
+      int32_t adc_P = (int32_t)((raw_data[0] << 12) | (raw_data[1] << 4) |
+                                (raw_data[2] >> 4));
+      int32_t adc_T = (int32_t)((raw_data[3] << 12) | (raw_data[4] << 4) |
+                                (raw_data[5] >> 4));
+
+      int32_t temp_raw = bmp280_compensate_T_int32(adc_T, &calib);
+      uint32_t press_raw = bmp280_compensate_P_int64(adc_P, &calib);
+
+      int32_t temp_int = temp_raw / 100;
+      int32_t temp_frac = temp_raw % 100;
+      if (temp_frac < 0)
+        temp_frac = -temp_frac;
+
+      uint32_t press_pa = press_raw / 256;
+      uint32_t press_hpa_int = press_pa / 100;
+      uint32_t press_hpa_frac = press_pa % 100;
+
+      uint32_t press_mmhg_int = (press_pa * 75) / 10000;
+
+      printf("Temp: %ld.%02ld C | Press: %lu.%02lu hPa (%lu mmHg)\r\n",
+             temp_int, temp_frac, press_hpa_int, press_hpa_frac,
+             press_mmhg_int);
+    }
+
+    HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
