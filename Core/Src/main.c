@@ -67,7 +67,7 @@ bool AHT20_CalibrationCheck(I2C_HandleTypeDef *hi2c) {
 
   HAL_Delay(10);
 
-  if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &cmd_status, 1, 100) !=
+  if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &status, 1, 100) !=
       HAL_OK) {
     printf("Master Receive status byte error!\r\n");
     return false;
