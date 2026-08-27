@@ -53,7 +53,7 @@
 /* USER CODE BEGIN PV */
 BMP280_HandleTypedef bmp280;
 
-bool AHT20_Calibration(I2C_HandleTypeDef *hi2c) {
+int AHT20_Calibration(I2C_HandleTypeDef *hi2c) {
   uint8_t status = 0;
   uint8_t cmd_status = 0x71;
 
@@ -102,7 +102,6 @@ int AHT20_TriggerMeasurement(I2C_HandleTypeDef *hi2c) {
     printf("AHT20 Transmit trigger measurement failed!\r\n");
     return 1;
   }
-  printf("AHT20 Measurement triggered!\r\n");
 
   HAL_Delay(80);
 
@@ -123,12 +122,58 @@ int AHT20_TriggerMeasurement(I2C_HandleTypeDef *hi2c) {
     return 1;
   }
 
-  printf("AHT20 Receive measurement completed!\r\n");
   return 0;
 }
+
+uint8_t AHT20_CalculateCRC8(const uint8_t *data, size_t len) {
+  uint8_t crc = 0xFF;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++) {
+      if (crc & 0x80) {
+        crc = (crc << 1) ^ 0x31;
+      } else {
+        crc = (crc << 1);
+      }
+    }
+  }
+  return crc;
+}
+
+int AHT20_ReadData(I2C_HandleTypeDef *hi2c, float *humidity,
+                   float *temperature) {
+  uint8_t buf[7];
+
+  if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, buf, 7, 100) != HAL_OK) {
+    return 1;
+  }
+
+  if (AHT20_CalculateCRC8(buf, 6) != buf[6]) {
+    printf("AHT20 CRC Mismatch Error!\r\n");
+    return 1;
+  }
+
+  // Reconstruct 20-bit Raw Humidity
+  uint32_t raw_humidity = ((uint32_t)buf[1] << 12) | ((uint32_t)buf[2] << 4) |
+                          ((uint32_t)buf[3] >> 4);
+
+  // Reconstruct 20-bit Raw Temperature
+  uint32_t raw_temp = (((uint32_t)buf[3] & 0x0F) << 16) |
+                      ((uint32_t)buf[4] << 8) | (uint32_t)buf[5];
+
+  // Datasheet conversion formulas:
+  // RH (%) = (raw_humidity / 2^20) * 100
+  // Temp (°C) = (raw_temp / 2^20) * 200 - 50
+  *humidity = ((float)raw_humidity / 1048576.0f) * 100.0f;
+  *temperature = ((float)raw_temp / 1048576.0f) * 200.0f - 50.0f;
+
+  return 0;
+}
+
 /* USER CODE END PV */
 
-/* Private function prototypes -----------------------------------------------*/
+/* Private function prototypes
+   -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
@@ -180,11 +225,11 @@ int main(void) {
     printf("BMP280 Initialize failed!\r\n");
   }
 
-  if (HAL_I2C_IsDeviceReady(&hi2c1, (I2C_AHT20_ADDRESS), 1,
-                            I2C_FIRST_AND_LAST_FRAME) == HAL_OK) {
+  if (HAL_I2C_IsDeviceReady(&hi2c1, (I2C_AHT20_ADDRESS), 1, 100) == HAL_OK) {
     printf("AHT20 Responded!\r\n");
     AHT20_Calibration(&hi2c1);
-    AHT20_TriggerMeasurement(&hi2c1);
+  } else {
+    printf("AHT20 Not Found on I2C Bus!\r\n");
   }
   HAL_Delay(50);
   /* USER CODE END 2 */
@@ -195,6 +240,8 @@ int main(void) {
     /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
     int32_t adc_T, adc_P;
+    float aht20_temp = 0.0f;
+    float aht20_hum = 0.0f;
 
     if (BMP280_ReadRaw(&bmp280, &adc_T, &adc_P)) {
       int32_t temp_raw = BMP280_Compensate_T(&bmp280, adc_T);
@@ -209,10 +256,34 @@ int main(void) {
       uint32_t press_hpa_int = press_pa / 100;
       uint32_t press_hpa_frac = press_pa % 100;
 
-      printf("Temp: %ld.%02ld C | Press: %lu.%02lu hPa\r\n", temp_int,
+      printf("BMP280 -> Temp: %ld.%02ld C | Press: %lu.%02lu hPa\r\n", temp_int,
              temp_frac, press_hpa_int, press_hpa_frac);
+    } else {
+      printf("BMP280 Read Data Failed!\r\n");
     }
-    HAL_Delay(500);
+
+    if (AHT20_TriggerMeasurement(&hi2c1) == 0) {
+      if (AHT20_ReadData(&hi2c1, &aht20_hum, &aht20_temp) == 0) {
+        int32_t temp_int = (int32_t)aht20_temp;
+        int32_t temp_frac = (int32_t)((aht20_temp - temp_int) * 100);
+        if (temp_frac < 0)
+          temp_frac = -temp_frac;
+
+        // Split humidity float into integer and fractional parts
+        int32_t hum_int = (int32_t)aht20_hum;
+        int32_t hum_frac = (int32_t)((aht20_hum - hum_int) * 100);
+        if (hum_frac < 0)
+          hum_frac = -hum_frac;
+
+        printf("AHT20 -> Temp: %ld.%02ld C | Humidity: %ld.%02ld %%\r\n",
+               temp_int, temp_frac, hum_int, hum_frac);
+      } else {
+        printf("AHT20 Read Data Failed!\r\n");
+      }
+    }
+
+    printf("--------------------------------------------------\r\n");
+    HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
