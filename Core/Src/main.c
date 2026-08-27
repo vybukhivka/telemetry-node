@@ -103,10 +103,11 @@ int main(void) {
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  if (BMP280_Init(&bmp280, &hi2c1)) {
+  BMP280_StatusTypedef bmp_status = BMP280_Init(&bmp280, &hi2c1);
+  if (bmp_status == BMP280_OK) {
     printf("BMP280 Initialized!\r\n");
   } else {
-    printf("BMP280 Initialize failed!\r\n");
+    printf("BMP280 Initialization failed with error code: %d\r\n", bmp_status);
   }
 
   AHT20_StatusTypedef aht_status = AHT20_Init(&aht20, &hi2c1);
@@ -125,7 +126,8 @@ int main(void) {
     /* USER CODE BEGIN 3 */
     int32_t adc_T, adc_P;
 
-    if (BMP280_ReadRaw(&bmp280, &adc_T, &adc_P)) {
+    bmp_status = BMP280_ReadRaw(&bmp280, &adc_T, &adc_P);
+    if (bmp_status == BMP280_OK) {
       int32_t temp_raw = BMP280_Compensate_T(&bmp280, adc_T);
       uint32_t press_raw = BMP280_Compensate_P(&bmp280, adc_P);
 
@@ -141,7 +143,7 @@ int main(void) {
       printf("BMP280 -> Temp: %ld.%02ld C | Press: %lu.%02lu hPa\r\n", temp_int,
              temp_frac, press_hpa_int, press_hpa_frac);
     } else {
-      printf("BMP280 Read Data Failed!\r\n");
+      printf("BMP280 Read Data Failed! Error Code: %d\r\n", bmp_status);
     }
 
     aht_status = AHT20_ReadData(&aht20);

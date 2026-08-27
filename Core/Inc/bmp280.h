@@ -7,6 +7,13 @@
 
 #define BMP280_I2C_ADDR         (0x77 << 1)
 
+typedef enum {
+  BMP280_OK = 0,
+  BMP280_ERR_INIT = 1,
+  BMP280_ERR_ID_MISMATCH = 2,
+  BMP280_ERR_I2C = 3
+} BMP280_StatusTypedef;
+
 typedef struct {
   uint16_t dig_T1;
   int16_t  dig_T2;
@@ -29,8 +36,8 @@ typedef struct {
   int32_t           t_fine;
 } BMP280_HandleTypedef;
 
-bool BMP280_Init(BMP280_HandleTypedef *dev, I2C_HandleTypeDef *hi2c);
-bool BMP280_ReadRaw(BMP280_HandleTypedef *dev, int32_t *adc_T, int32_t *adc_P);
+BMP280_StatusTypedef BMP280_Init(BMP280_HandleTypedef *dev, I2C_HandleTypeDef *hi2c);
+BMP280_StatusTypedef BMP280_ReadRaw(BMP280_HandleTypedef *dev, int32_t *adc_T, int32_t *adc_P);
 int32_t BMP280_Compensate_T(BMP280_HandleTypedef *dev, int32_t adc_T);
 uint32_t BMP280_Compensate_P(BMP280_HandleTypedef *dev, int32_t adc_P);
 
