@@ -53,7 +53,7 @@
 /* USER CODE BEGIN PV */
 BMP280_HandleTypedef bmp280;
 
-bool AHT20_CalibrationCheck(I2C_HandleTypeDef *hi2c) {
+bool AHT20_Calibration(I2C_HandleTypeDef *hi2c) {
   uint8_t status = 0;
   uint8_t cmd_status = 0x71;
 
@@ -62,7 +62,7 @@ bool AHT20_CalibrationCheck(I2C_HandleTypeDef *hi2c) {
   if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, &cmd_status, 1, 100) !=
       HAL_OK) {
     printf("Master Transmit status byte error!\r\n");
-    return false;
+    return 1;
   }
 
   HAL_Delay(10);
@@ -70,7 +70,7 @@ bool AHT20_CalibrationCheck(I2C_HandleTypeDef *hi2c) {
   if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &status, 1, 100) !=
       HAL_OK) {
     printf("Master Receive status byte error!\r\n");
-    return false;
+    return 1;
   }
 
   if ((status & 0x08) == 0) {
@@ -81,14 +81,28 @@ bool AHT20_CalibrationCheck(I2C_HandleTypeDef *hi2c) {
     if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, init_cmd, 3, 100) !=
         HAL_OK) {
       printf("Master Transmit calibration enable bit error!\r\n");
-      return false;
+      return 1;
     }
 
     HAL_Delay(10);
   }
 
   printf("AHT20 Calibration check is OK!\r\n");
-  return true;
+  return 0;
+}
+
+int AHT20_TriggerMeasurement(I2C_HandleTypeDef *hi2c) {
+  uint8_t measure_cmd[3] = {0xAC, 0x33, 0x00};
+
+  if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, measure_cmd, 3, 100) !=
+      HAL_OK) {
+    printf("AHT20 Transmit trigger measurement failed!\r\n");
+    return 1;
+  }
+
+  HAL_Delay(80);
+  printf("AHT20 Measurement triggered!\r\n");
+  return 0;
 }
 /* USER CODE END PV */
 
@@ -147,7 +161,8 @@ int main(void) {
   if (HAL_I2C_IsDeviceReady(&hi2c1, (I2C_AHT20_ADDRESS), 1,
                             I2C_FIRST_AND_LAST_FRAME) == HAL_OK) {
     printf("AHT20 Responded!\r\n");
-    AHT20_CalibrationCheck(&hi2c1);
+    AHT20_Calibration(&hi2c1);
+    AHT20_TriggerMeasurement(&hi2c1);
   }
   HAL_Delay(50);
   /* USER CODE END 2 */
