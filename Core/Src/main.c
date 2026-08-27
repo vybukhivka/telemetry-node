@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "aht20.h"
 #include "bmp280.h"
 #include "gpio.h"
 #include "i2c.h"
@@ -52,124 +53,7 @@
 
 /* USER CODE BEGIN PV */
 BMP280_HandleTypedef bmp280;
-
-int AHT20_Calibration(I2C_HandleTypeDef *hi2c) {
-  uint8_t status = 0;
-  uint8_t cmd_status = 0x71;
-
-  HAL_Delay(40);
-
-  if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, &cmd_status, 1, 100) !=
-      HAL_OK) {
-    printf("Master Transmit status byte error!\r\n");
-    return 1;
-  }
-
-  HAL_Delay(10);
-
-  if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &status, 1, 100) !=
-      HAL_OK) {
-    printf("Master Receive status byte error!\r\n");
-    return 1;
-  }
-
-  if ((status & 0x08) == 0) {
-    uint8_t init_cmd[3] = {0xBE, 0x08, 0x00};
-
-    HAL_Delay(10);
-
-    if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, init_cmd, 3, 100) !=
-        HAL_OK) {
-      printf("Master Transmit calibration enable bit error!\r\n");
-      return 1;
-    }
-
-    HAL_Delay(10);
-  }
-
-  printf("AHT20 Calibration check is OK!\r\n");
-  return 0;
-}
-
-int AHT20_TriggerMeasurement(I2C_HandleTypeDef *hi2c) {
-  uint8_t measure_cmd[3] = {0xAC, 0x33, 0x00};
-  uint8_t status = 0x71;
-  uint8_t is_busy = 1;
-  uint8_t retries = 10;
-
-  if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, measure_cmd, 3, 100) !=
-      HAL_OK) {
-    printf("AHT20 Transmit trigger measurement failed!\r\n");
-    return 1;
-  }
-
-  HAL_Delay(80);
-
-  do {
-    if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &status, 1, 100) ==
-        HAL_OK) {
-      if ((status & 0x80) == 0) {
-        is_busy = 0;
-        break;
-      }
-    }
-    retries--;
-    HAL_Delay(10);
-  } while (is_busy && retries > 0);
-
-  if (is_busy) {
-    printf("AHT20 Measurement Timeout!\r\n");
-    return 1;
-  }
-
-  return 0;
-}
-
-uint8_t AHT20_CalculateCRC8(const uint8_t *data, size_t len) {
-  uint8_t crc = 0xFF;
-  for (size_t i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (uint8_t bit = 0; bit < 8; bit++) {
-      if (crc & 0x80) {
-        crc = (crc << 1) ^ 0x31;
-      } else {
-        crc = (crc << 1);
-      }
-    }
-  }
-  return crc;
-}
-
-int AHT20_ReadData(I2C_HandleTypeDef *hi2c, float *humidity,
-                   float *temperature) {
-  uint8_t buf[7];
-
-  if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, buf, 7, 100) != HAL_OK) {
-    return 1;
-  }
-
-  if (AHT20_CalculateCRC8(buf, 6) != buf[6]) {
-    printf("AHT20 CRC Mismatch Error!\r\n");
-    return 1;
-  }
-
-  // Reconstruct 20-bit Raw Humidity
-  uint32_t raw_humidity = ((uint32_t)buf[1] << 12) | ((uint32_t)buf[2] << 4) |
-                          ((uint32_t)buf[3] >> 4);
-
-  // Reconstruct 20-bit Raw Temperature
-  uint32_t raw_temp = (((uint32_t)buf[3] & 0x0F) << 16) |
-                      ((uint32_t)buf[4] << 8) | (uint32_t)buf[5];
-
-  // Datasheet conversion formulas:
-  // RH (%) = (raw_humidity / 2^20) * 100
-  // Temp (°C) = (raw_temp / 2^20) * 200 - 50
-  *humidity = ((float)raw_humidity / 1048576.0f) * 100.0f;
-  *temperature = ((float)raw_temp / 1048576.0f) * 200.0f - 50.0f;
-
-  return 0;
-}
-
+AHT20_HandleTypedef aht20;
 /* USER CODE END PV */
 
 /* Private function prototypes
@@ -220,16 +104,16 @@ int main(void) {
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   if (BMP280_Init(&bmp280, &hi2c1)) {
-    printf("BMP280 Initialize!\r\n");
+    printf("BMP280 Initialized!\r\n");
   } else {
     printf("BMP280 Initialize failed!\r\n");
   }
 
-  if (HAL_I2C_IsDeviceReady(&hi2c1, (I2C_AHT20_ADDRESS), 1, 100) == HAL_OK) {
-    printf("AHT20 Responded!\r\n");
-    AHT20_Calibration(&hi2c1);
+  AHT20_StatusTypedef aht_status = AHT20_Init(&aht20, &hi2c1);
+  if (aht_status == AHT20_OK) {
+    printf("AHT20 Initialized!\r\n");
   } else {
-    printf("AHT20 Not Found on I2C Bus!\r\n");
+    printf("AHT20 Initialize failed!\r\n");
   }
   HAL_Delay(50);
   /* USER CODE END 2 */
@@ -240,8 +124,6 @@ int main(void) {
     /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
     int32_t adc_T, adc_P;
-    float aht20_temp = 0.0f;
-    float aht20_hum = 0.0f;
 
     if (BMP280_ReadRaw(&bmp280, &adc_T, &adc_P)) {
       int32_t temp_raw = BMP280_Compensate_T(&bmp280, adc_T);
@@ -262,24 +144,22 @@ int main(void) {
       printf("BMP280 Read Data Failed!\r\n");
     }
 
-    if (AHT20_TriggerMeasurement(&hi2c1) == 0) {
-      if (AHT20_ReadData(&hi2c1, &aht20_hum, &aht20_temp) == 0) {
-        int32_t temp_int = (int32_t)aht20_temp;
-        int32_t temp_frac = (int32_t)((aht20_temp - temp_int) * 100);
-        if (temp_frac < 0)
-          temp_frac = -temp_frac;
+    aht_status = AHT20_ReadData(&aht20);
+    if (aht_status == AHT20_OK) {
+      int32_t temp_int = (int32_t)aht20.temperature;
+      int32_t temp_frac = (int32_t)((aht20.temperature - temp_int) * 100);
+      if (temp_frac < 0)
+        temp_frac = -temp_frac;
 
-        // Split humidity float into integer and fractional parts
-        int32_t hum_int = (int32_t)aht20_hum;
-        int32_t hum_frac = (int32_t)((aht20_hum - hum_int) * 100);
-        if (hum_frac < 0)
-          hum_frac = -hum_frac;
+      int32_t hum_int = (int32_t)aht20.humidity;
+      int32_t hum_frac = (int32_t)((aht20.humidity - hum_int) * 100);
+      if (hum_frac < 0)
+        hum_frac = -hum_frac;
 
-        printf("AHT20 -> Temp: %ld.%02ld C | Humidity: %ld.%02ld %%\r\n",
-               temp_int, temp_frac, hum_int, hum_frac);
-      } else {
-        printf("AHT20 Read Data Failed!\r\n");
-      }
+      printf("AHT20  -> Temp: %ld.%02ld C | Humidity: %ld.%02ld %%\r\n",
+             temp_int, temp_frac, hum_int, hum_frac);
+    } else {
+      printf("AHT20 Read Data Failed! Error Code: %d\r\n", aht_status);
     }
 
     printf("--------------------------------------------------\r\n");
