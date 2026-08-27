@@ -93,15 +93,37 @@ bool AHT20_Calibration(I2C_HandleTypeDef *hi2c) {
 
 int AHT20_TriggerMeasurement(I2C_HandleTypeDef *hi2c) {
   uint8_t measure_cmd[3] = {0xAC, 0x33, 0x00};
+  uint8_t status = 0x71;
+  uint8_t is_busy = 1;
+  uint8_t retries = 10;
 
   if (HAL_I2C_Master_Transmit(hi2c, I2C_AHT20_ADDRESS, measure_cmd, 3, 100) !=
       HAL_OK) {
     printf("AHT20 Transmit trigger measurement failed!\r\n");
     return 1;
   }
+  printf("AHT20 Measurement triggered!\r\n");
 
   HAL_Delay(80);
-  printf("AHT20 Measurement triggered!\r\n");
+
+  do {
+    if (HAL_I2C_Master_Receive(hi2c, I2C_AHT20_ADDRESS, &status, 1, 100) ==
+        HAL_OK) {
+      if ((status & 0x80) == 0) {
+        is_busy = 0;
+        break;
+      }
+    }
+    retries--;
+    HAL_Delay(10);
+  } while (is_busy && retries > 0);
+
+  if (is_busy) {
+    printf("AHT20 Measurement Timeout!\r\n");
+    return 1;
+  }
+
+  printf("AHT20 Receive measurement completed!\r\n");
   return 0;
 }
 /* USER CODE END PV */
