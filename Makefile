@@ -63,8 +63,8 @@ Core/Src/gpio.c \
 Core/Src/i2c.c \
 Core/Src/usart.c \
 Core/Src/bmp280.c \
-Core/Src/aht20.c
-
+Core/Src/aht20.c \
+Core/Src/mpu6050.c
 
 # ASM sources
 ASM_SOURCES =  \
