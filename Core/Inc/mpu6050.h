@@ -13,17 +13,27 @@ typedef enum {
 
 typedef struct {
 	I2C_HandleTypeDef *hi2c;
+
 	int16_t Accel_X_RAW;
 	int16_t Accel_Y_RAW;
 	int16_t Accel_Z_RAW;
 	int16_t Gyro_X_RAW;
 	int16_t Gyro_Y_RAW;
 	int16_t Gyro_Z_RAW;
+
+	int32_t Accel_X_Offset;
+	int32_t Accel_Y_Offset;
+	int32_t Accel_Z_Offset;
+	int32_t Gyro_X_Offset;
+	int32_t Gyro_Y_Offset;
+	int32_t Gyro_Z_Offset;
+
 	float Ax, Ay, Az;
 	float Gx, Gy, Gz;
 } MPU6050_HandleTypedef;
 
 MPU6050_StatusTypedef MPU6050_Init(MPU6050_HandleTypedef *dev, I2C_HandleTypeDef *hi2c);
+MPU6050_StatusTypedef MPU6050_Calibrate(MPU6050_HandleTypedef *dev, uint16_t num_samples);
 MPU6050_StatusTypedef MPU6050_ReadAll(MPU6050_HandleTypedef *dev);
 
 #endif /* __MPU6050_H */
