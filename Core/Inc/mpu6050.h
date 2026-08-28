@@ -30,6 +30,7 @@ typedef struct {
 
 	float Ax, Ay, Az;
 	float Gx, Gy, Gz;
+	float Temperature;
 } MPU6050_HandleTypedef;
 
 MPU6050_StatusTypedef MPU6050_Init(MPU6050_HandleTypedef *dev, I2C_HandleTypeDef *hi2c);

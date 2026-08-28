@@ -4,6 +4,7 @@
 
 #define MPU6050_REG_WHO_AM_I 0x75
 #define MPU6050_REG_PWR_MGMT_1 0x6B
+#define MPU6050_REG_ACCEL_XOUT_H 0x3B
 #define MPU6050_WHO_AM_I_VAL 0x68
 
 MPU6050_StatusTypedef MPU6050_Init(MPU6050_HandleTypedef *dev,
@@ -21,7 +22,7 @@ MPU6050_StatusTypedef MPU6050_Init(MPU6050_HandleTypedef *dev,
   }
 
   uint8_t pwr_mgmt =
-      0x01; // wake up sensor and set clock source to X-axis Gyro PPL
+      0x01; // Wake up sensor and set clock source to X-axis Gyro PPL
   if (HAL_I2C_Mem_Write(dev->hi2c, MPU6050_I2C_ADDR, MPU6050_REG_PWR_MGMT_1,
                         I2C_MEMADD_SIZE_8BIT, &pwr_mgmt, 1, 100) != HAL_OK) {
     return MPU6050_ERR_I2C;
@@ -58,7 +59,7 @@ MPU6050_StatusTypedef MPU6050_Calibrate(MPU6050_HandleTypedef *dev,
     gy_sum += dev->Gyro_Y_RAW;
     gz_sum += dev->Gyro_Z_RAW;
 
-    HAL_Delay(3); // wait for new sample, based on output rate
+    HAL_Delay(3); // Wait for new sample, based on output rate
   }
 
   // Average the accumulated values
@@ -70,6 +71,46 @@ MPU6050_StatusTypedef MPU6050_Calibrate(MPU6050_HandleTypedef *dev,
   dev->Gyro_X_Offset = gx_sum / num_samples;
   dev->Gyro_Y_Offset = gy_sum / num_samples;
   dev->Gyro_Z_Offset = gz_sum / num_samples;
+
+  return MPU6050_OK;
+}
+
+MPU6050_StatusTypedef MPU6050_ReadAll(MPU6050_HandleTypedef *dev) {
+  uint8_t buf[14];
+
+  if (HAL_I2C_Mem_Read(dev->hi2c, MPU6050_I2C_ADDR, MPU6050_REG_ACCEL_XOUT_H,
+                       I2C_MEMADD_SIZE_8BIT, buf, 14, 100) != HAL_OK) {
+    return MPU6050_ERR_I2C;
+  }
+
+  dev->Accel_X_RAW = (int16_t)((buf[0] << 8) | buf[1]);
+  dev->Accel_Y_RAW = (int16_t)((buf[2] << 8) | buf[3]);
+  dev->Accel_Z_RAW = (int16_t)((buf[4] << 8) | buf[5]);
+
+  int16_t temp_raw = (int16_t)((buf[6] << 8) | buf[7]);
+
+  dev->Gyro_X_RAW = (int16_t)((buf[8] << 8) | buf[9]);
+  dev->Gyro_Y_RAW = (int16_t)((buf[10] << 8) | buf[11]);
+  dev->Gyro_Z_RAW = (int16_t)((buf[12] << 8) | buf[13]);
+
+  int16_t ax_corrected = dev->Accel_X_RAW - dev->Accel_X_Offset;
+  int16_t ay_corrected = dev->Accel_Y_RAW - dev->Accel_Y_Offset;
+  int16_t az_corrected = dev->Accel_Z_RAW - dev->Accel_Z_Offset;
+
+  int16_t gx_corrected = dev->Gyro_X_RAW - dev->Gyro_X_Offset;
+  int16_t gy_corrected = dev->Gyro_Y_RAW - dev->Gyro_Y_Offset;
+  int16_t gz_corrected = dev->Gyro_Z_RAW - dev->Gyro_Z_Offset;
+
+  // Scale factors for default ranges (+/-2g, +/-250 deg/s)
+  dev->Ax = (float)ax_corrected / 16384.0f;
+  dev->Ay = (float)ay_corrected / 16384.0f;
+  dev->Az = (float)az_corrected / 16384.0f;
+
+  dev->Gx = (float)gx_corrected / 131.0f;
+  dev->Gy = (float)gy_corrected / 131.0f;
+  dev->Gz = (float)gz_corrected / 131.0f;
+
+  dev->Temperature = ((float)temp_raw / 340.0f) + 36.53f;
 
   return MPU6050_OK;
 }

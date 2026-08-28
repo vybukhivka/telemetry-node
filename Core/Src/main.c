@@ -22,6 +22,7 @@
 #include "bmp280.h"
 #include "gpio.h"
 #include "i2c.h"
+#include "mpu6050.h"
 #include "stm32l4xx_hal.h"
 #include "stm32l4xx_hal_def.h"
 #include "stm32l4xx_hal_i2c.h"
@@ -54,6 +55,7 @@
 /* USER CODE BEGIN PV */
 BMP280_HandleTypedef bmp280;
 AHT20_HandleTypedef aht20;
+MPU6050_HandleTypedef mpu6050;
 /* USER CODE END PV */
 
 /* Private function prototypes
@@ -116,7 +118,17 @@ int main(void) {
   } else {
     printf("AHT20 Initialize failed!\r\n");
   }
+
+  MPU6050_StatusTypedef mpu_status = MPU6050_Init(&mpu6050, &hi2c1);
+  if (mpu_status == MPU6050_OK) {
+    MPU6050_Calibrate(&mpu6050, 200);
+    printf("MPU6050 Initialized!\r\n");
+  } else {
+    printf("MPU6050 Initialize failed!\r\n");
+  }
+
   HAL_Delay(50);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -126,6 +138,7 @@ int main(void) {
     /* USER CODE BEGIN 3 */
     int32_t adc_T, adc_P;
 
+    // BMP280 READ
     bmp_status = BMP280_ReadRaw(&bmp280, &adc_T, &adc_P);
     if (bmp_status == BMP280_OK) {
       int32_t temp_raw = BMP280_Compensate_T(&bmp280, adc_T);
@@ -146,6 +159,7 @@ int main(void) {
       printf("BMP280 Read Data Failed! Error Code: %d\r\n", bmp_status);
     }
 
+    // AHT20 READ
     aht_status = AHT20_ReadData(&aht20);
     if (aht_status == AHT20_OK) {
       int32_t temp_int = (int32_t)aht20.temperature;
@@ -162,6 +176,48 @@ int main(void) {
              temp_int, temp_frac, hum_int, hum_frac);
     } else {
       printf("AHT20 Read Data Failed! Error Code: %d\r\n", aht_status);
+    }
+
+    // MPU6050 READ
+    mpu_status = MPU6050_ReadAll(&mpu6050);
+    if (mpu_status == MPU6050_OK) {
+      // Convert floats to int/frac for printing without %f dependency
+      int32_t ax_int = (int32_t)mpu6050.Ax;
+      int32_t ax_frac = (int32_t)((mpu6050.Ax - ax_int) * 100);
+      if (ax_frac < 0)
+        ax_frac = -ax_frac;
+
+      int32_t ay_int = (int32_t)mpu6050.Ay;
+      int32_t ay_frac = (int32_t)((mpu6050.Ay - ay_int) * 100);
+      if (ay_frac < 0)
+        ay_frac = -ay_frac;
+
+      int32_t az_int = (int32_t)mpu6050.Az;
+      int32_t az_frac = (int32_t)((mpu6050.Az - az_int) * 100);
+      if (az_frac < 0)
+        az_frac = -az_frac;
+
+      int32_t gx_int = (int32_t)mpu6050.Gx;
+      int32_t gx_frac = (int32_t)((mpu6050.Gx - gx_int) * 100);
+      if (gx_frac < 0)
+        gx_frac = -gx_frac;
+
+      int32_t gy_int = (int32_t)mpu6050.Gy;
+      int32_t gy_frac = (int32_t)((mpu6050.Gy - gy_int) * 100);
+      if (gy_frac < 0)
+        gy_frac = -gy_frac;
+
+      int32_t gz_int = (int32_t)mpu6050.Gz;
+      int32_t gz_frac = (int32_t)((mpu6050.Gz - gz_int) * 100);
+      if (gz_frac < 0)
+        gz_frac = -gz_frac;
+
+      printf("MPU6050 -> Accel (g): X=%ld.%02ld Y=%ld.%02ld Z=%ld.%02ld | Gyro "
+             "(deg/s): X=%ld.%02ld Y=%ld.%02ld Z=%ld.%02ld\r\n",
+             ax_int, ax_frac, ay_int, ay_frac, az_int, az_frac, gx_int, gx_frac,
+             gy_int, gy_frac, gz_int, gz_frac);
+    } else {
+      printf("MPU6050 Read Data Failed! Error Code: %d\r\n", mpu_status);
     }
 
     printf("--------------------------------------------------\r\n");
