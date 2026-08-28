@@ -18,10 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "i2c.h"
-#include "spi.h"
-#include "usart.h"
+#include "aht20.h"
+#include "bmp280.h"
 #include "gpio.h"
+#include "i2c.h"
+#include "mpu6050.h"
+#include "spi.h"
+#include "st7920.h"
+#include "usart.h"
+#include <stdint.h>
+#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -66,11 +72,10 @@ int _write(int file, char *ptr, int len) {
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
 
   /* USER CODE BEGIN 1 */
 
@@ -78,7 +83,8 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
+   */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -120,12 +126,17 @@ int main(void)
     printf("MPU6050 Initialize failed!\r\n");
   }
 
+  if (ST7920_Init() == ST7920_OK) {
+    printf("ST7920 Initialized!\r\n");
+  }
+
   HAL_Delay(50);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  char lcd_buf[17]; // 16 char + null terminator
   while (1) {
     /* USER CODE END WHILE */
 
@@ -149,7 +160,11 @@ int main(void)
 
       printf("BMP280 -> Temp: %ld.%02ld C | Press: %lu.%02lu hPa\r\n", temp_int,
              temp_frac, press_hpa_int, press_hpa_frac);
+      snprintf(lcd_buf, sizeof(lcd_buf), "P:%4u   ",
+               (unsigned int)(press_hpa_int % 10000));
+      ST7920_SendString(0, 0, lcd_buf);
     } else {
+      ST7920_SendString(0, 0, "BMP280 Error    ");
       printf("BMP280 Read Data Failed! Error Code: %d\r\n", bmp_status);
     }
 
@@ -168,7 +183,12 @@ int main(void)
 
       printf("AHT20  -> Temp: %ld.%02ld C | Humidity: %ld.%02ld %%\r\n",
              temp_int, temp_frac, hum_int, hum_frac);
+      snprintf(lcd_buf, sizeof(lcd_buf), "T:%2dC  RH:%2d%%  ",
+               (int)(temp_int > 99 ? 99 : (temp_int < -99 ? -99 : temp_int)),
+               (int)(hum_int > 99 ? 99 : (hum_int < 0 ? 0 : hum_int)));
+      ST7920_SendString(1, 0, lcd_buf);
     } else {
+      ST7920_SendString(1, 0, "AHT20 Error     ");
       printf("AHT20 Read Data Failed! Error Code: %d\r\n", aht_status);
     }
 
@@ -210,7 +230,28 @@ int main(void)
              "(deg/s): X=%ld.%02ld Y=%ld.%02ld Z=%ld.%02ld\r\n",
              ax_int, ax_frac, ay_int, ay_frac, az_int, az_frac, gx_int, gx_frac,
              gy_int, gy_frac, gz_int, gz_frac);
+      // Line 2: Accelerometer
+      int8_t ax_i = (int8_t)(ax_int > 9 ? 9 : (ax_int < -9 ? -9 : ax_int));
+      uint8_t ax_f = (uint8_t)(ax_frac % 100);
+
+      int8_t ay_i = (int8_t)(ay_int > 9 ? 9 : (ay_int < -9 ? -9 : ay_int));
+      uint8_t ay_f = (uint8_t)(ay_frac % 100);
+
+      int8_t az_i = (int8_t)(az_int > 9 ? 9 : (az_int < -9 ? -9 : az_int));
+      uint8_t az_f = (uint8_t)(az_frac % 100);
+
+      snprintf(lcd_buf, sizeof(lcd_buf), "A%2d.%02u%2d.%02u%2d.%02u", ax_i,
+               ax_f, ay_i, ay_f, az_i, az_f);
+      ST7920_SendString(2, 0, lcd_buf);
+      // Line 3: Gyroscope
+      snprintf(lcd_buf, sizeof(lcd_buf), "G:%3d%3d%3d d/s",
+               (int)(gx_int > 99 ? 99 : (gx_int < -99 ? -99 : gx_int)),
+               (int)(gy_int > 99 ? 99 : (gy_int < -99 ? -99 : gy_int)),
+               (int)(gz_int > 99 ? 99 : (gz_int < -99 ? -99 : gz_int)));
+      ST7920_SendString(3, 0, lcd_buf);
     } else {
+      ST7920_SendString(2, 0, "MPU6050 Error   ");
+      ST7920_SendString(3, 0, "                ");
       printf("MPU6050 Read Data Failed! Error Code: %d\r\n", mpu_status);
     }
 
@@ -221,24 +262,22 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-  */
-  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-  {
+   */
+  if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK) {
     Error_Handler();
   }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -249,22 +288,20 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
-  {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK) {
     Error_Handler();
   }
 }
@@ -274,11 +311,10 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state
    */
@@ -289,14 +325,13 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t *file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n",
