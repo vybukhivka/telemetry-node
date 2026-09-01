@@ -18,13 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "aht20.h"
-#include "bmp280.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "mpu6050.h"
 #include "spi.h"
-#include "st7920.h"
 #include "stm32l476xx.h"
 #include "stm32l4xx_hal_gpio.h"
 #include "usart.h"
@@ -33,7 +29,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "aht20.h"
+#include "bmp280.h"
+#include "mpu6050.h"
+#include "st7920.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
