@@ -25,6 +25,8 @@
 #include "mpu6050.h"
 #include "spi.h"
 #include "st7920.h"
+#include "stm32l476xx.h"
+#include "stm32l4xx_hal_gpio.h"
 #include "usart.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -55,6 +57,7 @@
 BMP280_HandleTypedef bmp280;
 AHT20_HandleTypedef aht20;
 MPU6050_HandleTypedef mpu6050;
+ST7920_HandleTypedef st7920;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -126,7 +129,7 @@ int main(void) {
     printf("MPU6050 Initialize failed!\r\n");
   }
 
-  if (ST7920_Init() == ST7920_OK) {
+  if (ST7920_Init(&st7920, &hspi2, GPIOB, GPIO_PIN_12) == ST7920_OK) {
     printf("ST7920 Initialized!\r\n");
   }
 
@@ -162,9 +165,9 @@ int main(void) {
              temp_frac, press_hpa_int, press_hpa_frac);
       snprintf(lcd_buf, sizeof(lcd_buf), "P:%4u   ",
                (unsigned int)(press_hpa_int % 10000));
-      ST7920_SendString(0, 0, lcd_buf);
+      ST7920_SendString(&st7920, 0, 0, lcd_buf);
     } else {
-      ST7920_SendString(0, 0, "BMP280 Error    ");
+      ST7920_SendString(&st7920, 0, 0, "BMP280 Error    ");
       printf("BMP280 Read Data Failed! Error Code: %d\r\n", bmp_status);
     }
 
@@ -186,9 +189,9 @@ int main(void) {
       snprintf(lcd_buf, sizeof(lcd_buf), "T:%2dC  RH:%2d%%  ",
                (int)(temp_int > 99 ? 99 : (temp_int < -99 ? -99 : temp_int)),
                (int)(hum_int > 99 ? 99 : (hum_int < 0 ? 0 : hum_int)));
-      ST7920_SendString(1, 0, lcd_buf);
+      ST7920_SendString(&st7920, 1, 0, lcd_buf);
     } else {
-      ST7920_SendString(1, 0, "AHT20 Error     ");
+      ST7920_SendString(&st7920, 1, 0, "AHT20 Error     ");
       printf("AHT20 Read Data Failed! Error Code: %d\r\n", aht_status);
     }
 
@@ -242,16 +245,16 @@ int main(void) {
 
       snprintf(lcd_buf, sizeof(lcd_buf), "A%2d.%02u%2d.%02u%2d.%02u", ax_i,
                ax_f, ay_i, ay_f, az_i, az_f);
-      ST7920_SendString(2, 0, lcd_buf);
+      ST7920_SendString(&st7920, 2, 0, lcd_buf);
       // Line 3: Gyroscope
       snprintf(lcd_buf, sizeof(lcd_buf), "G:%3d%3d%3d d/s",
                (int)(gx_int > 99 ? 99 : (gx_int < -99 ? -99 : gx_int)),
                (int)(gy_int > 99 ? 99 : (gy_int < -99 ? -99 : gy_int)),
                (int)(gz_int > 99 ? 99 : (gz_int < -99 ? -99 : gz_int)));
-      ST7920_SendString(3, 0, lcd_buf);
+      ST7920_SendString(&st7920, 3, 0, lcd_buf);
     } else {
-      ST7920_SendString(2, 0, "MPU6050 Error   ");
-      ST7920_SendString(3, 0, "                ");
+      ST7920_SendString(&st7920, 2, 0, "MPU6050 Error   ");
+      ST7920_SendString(&st7920, 3, 0, "                ");
       printf("MPU6050 Read Data Failed! Error Code: %d\r\n", mpu_status);
     }
 
