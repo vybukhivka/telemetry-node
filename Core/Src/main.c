@@ -118,7 +118,7 @@ int main(void) {
   if (aht_status == AHT20_OK) {
     printf("AHT20 Initialized!\r\n");
   } else {
-    printf("AHT20 Initialize failed!\r\n");
+    printf("AHT20 Initialization failed with error code: %d\r\n", aht_status);
   }
 
   MPU6050_StatusTypedef mpu_status = MPU6050_Init(&mpu6050, &hi2c1);
@@ -126,15 +126,18 @@ int main(void) {
     MPU6050_Calibrate(&mpu6050, 200);
     printf("MPU6050 Initialized!\r\n");
   } else {
-    printf("MPU6050 Initialize failed!\r\n");
+    printf("MPU6050 Initialization failed with error code: %d\r\n", mpu_status);
   }
 
-  if (ST7920_Init(&st7920, &hspi2, GPIOB, GPIO_PIN_12) == ST7920_OK) {
+  ST7920_StatusTypeDef st_status =
+      ST7920_Init(&st7920, &hspi2, GPIOB, GPIO_PIN_12);
+  if (st_status == ST7920_OK) {
     printf("ST7920 Initialized!\r\n");
+  } else {
+    printf("ST7920 Initialization failed with error code: %d\r\n", mpu_status);
   }
 
   HAL_Delay(50);
-
   /* USER CODE END 2 */
 
   /* Init scheduler */
