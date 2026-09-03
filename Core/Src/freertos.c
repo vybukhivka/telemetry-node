@@ -19,9 +19,10 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "task.h"
-#include "main.h"
 #include "cmsis_os.h"
+#include "cmsis_os2.h"
+#include "main.h"
+#include "task.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -78,63 +79,51 @@ static telemetry_t g_telemetry = {0};
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+    .name = "defaultTask",
+    .stack_size = 128 * 4,
+    .priority = (osPriority_t)osPriorityNormal,
 };
 /* Definitions for envTask */
 osThreadId_t envTaskHandle;
 const osThreadAttr_t envTask_attributes = {
-  .name = "envTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+    .name = "envTask",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t)osPriorityNormal,
 };
 /* Definitions for imuTask */
 osThreadId_t imuTaskHandle;
 const osThreadAttr_t imuTask_attributes = {
-  .name = "imuTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
+    .name = "imuTask",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t)osPriorityAboveNormal,
 };
 /* Definitions for displayTask */
 osThreadId_t displayTaskHandle;
 const osThreadAttr_t displayTask_attributes = {
-  .name = "displayTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityBelowNormal,
+    .name = "displayTask",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t)osPriorityBelowNormal,
 };
 /* Definitions for loggerTask */
 osThreadId_t loggerTaskHandle;
 const osThreadAttr_t loggerTask_attributes = {
-  .name = "loggerTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityBelowNormal,
+    .name = "loggerTask",
+    .stack_size = 512 * 4,
+    .priority = (osPriority_t)osPriorityHigh,
 };
 /* Definitions for sensorDisplayQueue */
 osMessageQueueId_t sensorDisplayQueueHandle;
 const osMessageQueueAttr_t sensorDisplayQueue_attributes = {
-  .name = "sensorDisplayQueue"
-};
+    .name = "sensorDisplayQueue"};
 /* Definitions for logQueue */
 osMessageQueueId_t logQueueHandle;
-const osMessageQueueAttr_t logQueue_attributes = {
-  .name = "logQueue"
-};
+const osMessageQueueAttr_t logQueue_attributes = {.name = "logQueue"};
 /* Definitions for i2cBusMutex */
 osMutexId_t i2cBusMutexHandle;
-const osMutexAttr_t i2cBusMutex_attributes = {
-  .name = "i2cBusMutex"
-};
+const osMutexAttr_t i2cBusMutex_attributes = {.name = "i2cBusMutex"};
 /* Definitions for uartDmaDoneSem */
 osSemaphoreId_t uartDmaDoneSemHandle;
-const osSemaphoreAttr_t uartDmaDoneSem_attributes = {
-  .name = "uartDmaDoneSem"
-};
-/* Definitions for i2cDmaDoneSem */
-osSemaphoreId_t i2cDmaDoneSemHandle;
-const osSemaphoreAttr_t i2cDmaDoneSem_attributes = {
-  .name = "i2cDmaDoneSem"
-};
+const osSemaphoreAttr_t uartDmaDoneSem_attributes = {.name = "uartDmaDoneSem"};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -150,10 +139,10 @@ void StartLoggerTask(void *argument);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
-  * @brief  FreeRTOS initialization
-  * @param  None
-  * @retval None
-  */
+ * @brief  FreeRTOS initialization
+ * @param  None
+ * @retval None
+ */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
 
@@ -168,10 +157,7 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the semaphores(s) */
   /* creation of uartDmaDoneSem */
-  uartDmaDoneSemHandle = osSemaphoreNew(1, 1, &uartDmaDoneSem_attributes);
-
-  /* creation of i2cDmaDoneSem */
-  i2cDmaDoneSemHandle = osSemaphoreNew(1, 1, &i2cDmaDoneSem_attributes);
+  uartDmaDoneSemHandle = osSemaphoreNew(1, 0, &uartDmaDoneSem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -183,10 +169,11 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the queue(s) */
   /* creation of sensorDisplayQueue */
-  sensorDisplayQueueHandle = osMessageQueueNew (1, 40, &sensorDisplayQueue_attributes);
+  sensorDisplayQueueHandle =
+      osMessageQueueNew(1, 40, &sensorDisplayQueue_attributes);
 
   /* creation of logQueue */
-  logQueueHandle = osMessageQueueNew (16, 64, &logQueue_attributes);
+  logQueueHandle = osMessageQueueNew(16, 64, &logQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -194,7 +181,8 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  defaultTaskHandle =
+      osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of envTask */
   envTaskHandle = osThreadNew(StartEnvTask, NULL, &envTask_attributes);
@@ -203,7 +191,8 @@ void MX_FREERTOS_Init(void) {
   imuTaskHandle = osThreadNew(StartImuTask, NULL, &imuTask_attributes);
 
   /* creation of displayTask */
-  displayTaskHandle = osThreadNew(StartDisplayTask, NULL, &displayTask_attributes);
+  displayTaskHandle =
+      osThreadNew(StartDisplayTask, NULL, &displayTask_attributes);
 
   /* creation of loggerTask */
   loggerTaskHandle = osThreadNew(StartLoggerTask, NULL, &loggerTask_attributes);
@@ -215,7 +204,6 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
-
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -225,8 +213,7 @@ void MX_FREERTOS_Init(void) {
  * @retval None
  */
 /* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
-{
+void StartDefaultTask(void *argument) {
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
   for (;;) {
@@ -242,8 +229,7 @@ void StartDefaultTask(void *argument)
  * @retval None
  */
 /* USER CODE END Header_StartEnvTask */
-void StartEnvTask(void *argument)
-{
+void StartEnvTask(void *argument) {
   /* USER CODE BEGIN StartEnvTask */
   int32_t adc_T, adc_P;
 
@@ -291,8 +277,7 @@ void StartEnvTask(void *argument)
  * @retval None
  */
 /* USER CODE END Header_StartImuTask */
-void StartImuTask(void *argument)
-{
+void StartImuTask(void *argument) {
   /* USER CODE BEGIN StartImuTask */
   uint32_t last_wake_time = osKernelGetState();
 
@@ -355,8 +340,7 @@ void StartImuTask(void *argument)
  * @retval None
  */
 /* USER CODE END Header_StartDisplayTask */
-void StartDisplayTask(void *argument)
-{
+void StartDisplayTask(void *argument) {
   /* USER CODE BEGIN StartDisplayTask */
   telemetry_t data;
   char lcd_buf[17];
@@ -377,7 +361,7 @@ void StartDisplayTask(void *argument)
       snprintf(lcd_buf, sizeof(lcd_buf), "T:%2dC H:%2u%% ", temp, hum);
       ST7920_SendString(&st7920, 1, 0, lcd_buf);
 
-      /* Line 2: Accelerometer (Matches main.c clamping) */
+      /* Line 2: Accelerometer */
       int ax = (data.ax_i > 9) ? 9 : ((data.ax_i < -9) ? -9 : data.ax_i);
       int ay = (data.ay_i > 9) ? 9 : ((data.ay_i < -9) ? -9 : data.ay_i);
       int az = (data.az_i > 9) ? 9 : ((data.az_i < -9) ? -9 : data.az_i);
@@ -405,8 +389,7 @@ void StartDisplayTask(void *argument)
  * @retval None
  */
 /* USER CODE END Header_StartLoggerTask */
-void StartLoggerTask(void *argument)
-{
+void StartLoggerTask(void *argument) {
   /* USER CODE BEGIN StartLoggerTask */
   log_msg_t msg;
 
@@ -433,60 +416,9 @@ static void log_print(const char *fmt, ...) {
   osMessageQueuePut(logQueueHandle, &msg, 0, 0);
 }
 
-void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    osSemaphoreRelease(i2cDmaDoneSemHandle);
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART2) {
+    osSemaphoreRelease(uartDmaDoneSemHandle);
   }
-}
-
-void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    osSemaphoreRelease(i2cDmaDoneSemHandle);
-  }
-}
-
-void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    osSemaphoreRelease(i2cDmaDoneSemHandle);
-  }
-}
-
-void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c->Instance == I2C1) {
-    osSemaphoreRelease(i2cDmaDoneSemHandle);
-  }
-}
-
-HAL_StatusTypeDef I2C_Mem_Read_DMA_Wait(I2C_HandleTypeDef *hi2c,
-                                        uint16_t DevAddress,
-                                        uint16_t MemAddress,
-                                        uint16_t MemAddSize, uint8_t *pData,
-                                        uint16_t Size, uint32_t TimeoutMs) {
-  HAL_StatusTypeDef status = HAL_I2C_Mem_Read_DMA(hi2c, DevAddress, MemAddress,
-                                                  MemAddSize, pData, Size);
-  if (status == HAL_OK) {
-    if (osSemaphoreAcquire(i2cDmaDoneSemHandle, pdMS_TO_TICKS(TimeoutMs)) !=
-        osOK) {
-      return HAL_TIMEOUT;
-    }
-  }
-  return status;
-}
-
-HAL_StatusTypeDef I2C_Mem_Write_DMA_Wait(I2C_HandleTypeDef *hi2c,
-                                         uint16_t DevAddress,
-                                         uint16_t MemAddress,
-                                         uint16_t MemAddSize, uint8_t *pData,
-                                         uint16_t Size, uint32_t TimeoutMs) {
-  HAL_StatusTypeDef status = HAL_I2C_Mem_Write_DMA(hi2c, DevAddress, MemAddress,
-                                                   MemAddSize, pData, Size);
-  if (status == HAL_OK) {
-    if (osSemaphoreAcquire(i2cDmaDoneSemHandle, pdMS_TO_TICKS(TimeoutMs)) !=
-        osOK) {
-      return HAL_TIMEOUT;
-    }
-  }
-  return status;
 }
 /* USER CODE END Application */
-
