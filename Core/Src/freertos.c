@@ -22,6 +22,7 @@
 #include "cmsis_os.h"
 #include "cmsis_os2.h"
 #include "main.h"
+#include "projdefs.h"
 #include "task.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -44,6 +45,10 @@ extern ST7920_HandleTypedef st7920;
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef struct {
+  uint8_t bmp_ok;
+  uint8_t aht_ok;
+  uint8_t mpu_ok;
+
   uint16_t press_hpa_int;
   uint8_t press_hpa_frac;
   int8_t bmp_temp_int;
@@ -234,7 +239,7 @@ void StartEnvTask(void *argument) {
   int32_t adc_T, adc_P;
 
   for (;;) {
-    if (osMutexAcquire(i2cBusMutexHandle, osWaitForever) == osOK) {
+    if (osMutexAcquire(i2cBusMutexHandle, pdMS_TO_TICKS(100)) == osOK) {
       /* BMP280 Read & Compensate */
       if (BMP280_ReadRaw(&bmp280, &adc_T, &adc_P) == BMP280_OK) {
         int32_t temp_raw = BMP280_Compensate_T(&bmp280, adc_T);
@@ -244,28 +249,31 @@ void StartEnvTask(void *argument) {
         g_telemetry.press_hpa_int = (uint16_t)(press_pa / 100);
         g_telemetry.press_hpa_frac = (uint8_t)(press_pa % 100);
         g_telemetry.bmp_temp_int = (int8_t)(temp_raw / 100);
+        g_telemetry.bmp_ok = 1;
 
-        log_print("BMP280 -> P:%u.%02u hPa T:%d C\r\n",
+        log_print("BMP280  -> P:%u.%02u hPa T:%d C\r\n",
                   g_telemetry.press_hpa_int, g_telemetry.press_hpa_frac,
                   g_telemetry.bmp_temp_int);
+      } else {
+        g_telemetry.bmp_ok = 0;
+        log_print("BMP280   -> Disconected!\r\n");
       }
-
       /* AHT20 Read */
       if (AHT20_ReadData(&aht20) == AHT20_OK) {
         g_telemetry.aht_temp_int = (int8_t)aht20.temperature;
         g_telemetry.aht_hum_int = (uint8_t)aht20.humidity;
+        g_telemetry.aht_ok = 1;
 
-        log_print("AHT20  -> T:%d C H:%u %%\r\n", g_telemetry.aht_temp_int,
+        log_print("AHT20   -> T:%d C H:%u %%\r\n", g_telemetry.aht_temp_int,
                   g_telemetry.aht_hum_int);
+      } else {
+        g_telemetry.aht_ok = 0;
+        log_print("AHT20   -> Disconected!\r\n");
       }
-
       osMutexRelease(i2cBusMutexHandle);
     }
-
-    /* Send update to Display Task */
     osMessageQueuePut(sensorDisplayQueueHandle, &g_telemetry, 0, 0);
-
-    osDelay(500); /* 2 Hz refresh */
+    osDelay(500);
   }
   /* USER CODE END StartEnvTask */
 }
@@ -279,10 +287,10 @@ void StartEnvTask(void *argument) {
 /* USER CODE END Header_StartImuTask */
 void StartImuTask(void *argument) {
   /* USER CODE BEGIN StartImuTask */
-  uint32_t last_wake_time = osKernelGetState();
+  uint32_t last_wake_time = osKernelGetTickCount();
 
   for (;;) {
-    if (osMutexAcquire(i2cBusMutexHandle, osWaitForever) == osOK) {
+    if (osMutexAcquire(i2cBusMutexHandle, pdMS_TO_TICKS(100)) == osOK) {
       if (MPU6050_ReadAll(&mpu6050) == MPU6050_OK) {
         int32_t ax_int = (int32_t)mpu6050.Ax;
         int32_t ax_frac = (int32_t)((mpu6050.Ax - ax_int) * 100);
@@ -314,20 +322,20 @@ void StartImuTask(void *argument) {
         g_telemetry.gx = (int16_t)mpu6050.Gx;
         g_telemetry.gy = (int16_t)mpu6050.Gy;
         g_telemetry.gz = (int16_t)mpu6050.Gz;
+        g_telemetry.mpu_ok = 1;
 
         log_print(
             "MPU6050 -> Acc: %d.%02u, %d.%02u, %d.%02u | Gyro: %d, %d, %d\r\n",
             g_telemetry.ax_i, g_telemetry.ax_f, g_telemetry.ay_i,
             g_telemetry.ay_f, g_telemetry.az_i, g_telemetry.az_f,
             g_telemetry.gx, g_telemetry.gy, g_telemetry.gz);
+      } else {
+        g_telemetry.mpu_ok = 0;
+        log_print("MPU6050 -> Disconected!\r\n");
       }
       osMutexRelease(i2cBusMutexHandle);
     }
-
-    /* Send frame to Display Task */
     osMessageQueuePut(sensorDisplayQueueHandle, &g_telemetry, 0, 0);
-
-    /* Run at 20 Hz (50ms) */
     osDelayUntil(last_wake_time += pdMS_TO_TICKS(50));
   }
   /* USER CODE END StartImuTask */
@@ -348,35 +356,47 @@ void StartDisplayTask(void *argument) {
   for (;;) {
     if (osMessageQueueGet(sensorDisplayQueueHandle, &data, NULL,
                           osWaitForever) == osOK) {
-      /* Line 0: Pressure */
-      snprintf(lcd_buf, sizeof(lcd_buf), "P:%4u   ",
-               (unsigned int)(data.press_hpa_int % 10000));
+      /* Line 0: Pressure (BMP280) */
+      if (data.bmp_ok) {
+        snprintf(lcd_buf, sizeof(lcd_buf), "P:%4u hPa   ",
+                 (unsigned int)(data.press_hpa_int % 10000));
+      } else {
+        snprintf(lcd_buf, sizeof(lcd_buf), "P: ERR         ");
+      }
       ST7920_SendString(&st7920, 0, 0, lcd_buf);
 
-      /* Line 1: Temperature & Humidity */
-      int temp = (data.aht_temp_int > 99)
-                     ? 99
-                     : ((data.aht_temp_int < -99) ? -99 : data.aht_temp_int);
-      unsigned int hum = (data.aht_hum_int > 99) ? 99 : data.aht_hum_int;
-      snprintf(lcd_buf, sizeof(lcd_buf), "T:%2dC H:%2u%% ", temp, hum);
+      /* Line 1: Temp & Humidity (AHT20) */
+      if (data.aht_ok) {
+        int temp = (data.aht_temp_int > 99)
+                       ? 99
+                       : ((data.aht_temp_int < -99) ? -99 : data.aht_temp_int);
+        unsigned int hum = (data.aht_hum_int > 99) ? 99 : data.aht_hum_int;
+        snprintf(lcd_buf, sizeof(lcd_buf), "T:%2dC H:%2u%%    ", temp, hum);
+      } else {
+        snprintf(lcd_buf, sizeof(lcd_buf), "T: ERR H: ERR  ");
+      }
       ST7920_SendString(&st7920, 1, 0, lcd_buf);
 
-      /* Line 2: Accelerometer */
-      int ax = (data.ax_i > 9) ? 9 : ((data.ax_i < -9) ? -9 : data.ax_i);
-      int ay = (data.ay_i > 9) ? 9 : ((data.ay_i < -9) ? -9 : data.ay_i);
-      int az = (data.az_i > 9) ? 9 : ((data.az_i < -9) ? -9 : data.az_i);
-      snprintf(lcd_buf, sizeof(lcd_buf), "A%2d.%02u%2d.%02u%2d.%02u", ax,
-               (unsigned int)(data.ax_f % 100), ay,
-               (unsigned int)(data.ay_f % 100), az,
-               (unsigned int)(data.az_f % 100));
-      ST7920_SendString(&st7920, 2, 0, lcd_buf);
+      /* Line 2 & 3: IMU (MPU6050) */
+      if (data.mpu_ok) {
+        int ax = (data.ax_i > 9) ? 9 : ((data.ax_i < -9) ? -9 : data.ax_i);
+        int ay = (data.ay_i > 9) ? 9 : ((data.ay_i < -9) ? -9 : data.ay_i);
+        int az = (data.az_i > 9) ? 9 : ((data.az_i < -9) ? -9 : data.az_i);
+        snprintf(lcd_buf, sizeof(lcd_buf), "A%2d.%02u%2d.%02u%2d.%02u", ax,
+                 (unsigned int)(data.ax_f % 100), ay,
+                 (unsigned int)(data.ay_f % 100), az,
+                 (unsigned int)(data.az_f % 100));
+        ST7920_SendString(&st7920, 2, 0, lcd_buf);
 
-      /* Line 3: Gyroscope */
-      int gx = (data.gx > 99) ? 99 : ((data.gx < -99) ? -99 : data.gx);
-      int gy = (data.gy > 99) ? 99 : ((data.gy < -99) ? -99 : data.gy);
-      int gz = (data.gz > 99) ? 99 : ((data.gz < -99) ? -99 : data.gz);
-      snprintf(lcd_buf, sizeof(lcd_buf), "G:%3d%3d%3d d/s", gx, gy, gz);
-      ST7920_SendString(&st7920, 3, 0, lcd_buf);
+        int gx = (data.gx > 99) ? 99 : ((data.gx < -99) ? -99 : data.gx);
+        int gy = (data.gy > 99) ? 99 : ((data.gy < -99) ? -99 : data.gy);
+        int gz = (data.gz > 99) ? 99 : ((data.gz < -99) ? -99 : data.gz);
+        snprintf(lcd_buf, sizeof(lcd_buf), "G:%3d%3d%3d d/s ", gx, gy, gz);
+        ST7920_SendString(&st7920, 3, 0, lcd_buf);
+      } else {
+        ST7920_SendString(&st7920, 2, 0, "A: DISCONNECTED ");
+        ST7920_SendString(&st7920, 3, 0, "G: DISCONNECTED ");
+      }
     }
   }
   /* USER CODE END StartDisplayTask */
